@@ -1,40 +1,25 @@
 <!DOCTYPE html>
 <html lang="es">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Sistema de Inscripción a Cursos</title>
+
+    <!-- Optional: Tailwind CDN for quick styling in a simple static deployment -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+    <link rel="stylesheet" href="./index.css" />
+
+    <!-- SheetJS (XLSX) required by the app to parse Excel in-browser -->
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
-    <script>
-      tailwind.config = {
-        theme: {
-          extend: {
-            fontFamily: {
-              sans: ['Inter', 'sans-serif'],
-            },
-          }
-        }
-      }
-    </script>
-  <script type="importmap">
-{
-  "imports": {
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.1.1/",
-    "react/": "https://aistudiocdn.com/react@^19.1.1/",
-    "react": "https://aistudiocdn.com/react@^19.1.1"
-  }
-}
-</script>
-  <!-- 1. Añadir Babel para transpilar JSX en el navegador -->
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-<link rel="stylesheet" href="/index.css">
-</head>
+
+    <!-- Ensure assets resolve correctly when the site is served from a subpath (GitHub Pages) -->
+    <base href="./">
+  </head>
+
   <body class="bg-slate-50">
     <div id="root"></div>
-    <!-- 2. Cambiar el tipo de script para que Babel lo procese (y corregir la ruta) -->
-    <script type="text/babel" data-type="module" src="./index.tsx"></script>
-  <script type="module" src="/index.tsx"></script>
-</body>
+
+    <!-- Production bundle: replace ./main.js with the actual built bundle filename produced by Vite (e.g. ./assets/index.<hash>.js) -->
+    <script type="module" src="./main.js"></script>
+  </body>
 </html>
