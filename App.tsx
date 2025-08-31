@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useEffect } from 'react';
 import { RegistrationStep, DocenteRegistrado, Inscripcion, Docente, Curso, Departamento, CurpData, RegistrationFormData } from './types.ts';
 import Header from './components/Header.tsx';
@@ -192,6 +191,18 @@ const App: React.FC = () => {
     setStep(RegistrationStep.VERIFY);
   }, []);
 
+  // Evita setState durante el render: si no hay usuario y el paso
+  // está en uno que requiere usuario, redirigimos a VERIFY
+  useEffect(() => {
+    if (!currentUser && (
+      step === RegistrationStep.REGISTER_FORM ||
+      step === RegistrationStep.CANCEL_COURSE ||
+      step === RegistrationStep.CONFIRMATION
+    )) {
+      setStep(RegistrationStep.VERIFY);
+    }
+  }, [currentUser, step]);
+
   const handleVerifyTeacher = useCallback((nombreCompleto: string): DocenteRegistrado | null => {
     const normalizedInputName = normalizeName(nombreCompleto);
     const found = docentesDB.find(d => normalizeName(d.NombreCompleto) === normalizedInputName);
@@ -296,8 +307,8 @@ const App: React.FC = () => {
         return <NewTeacherStep onSubmit={handleRegisterNewTeacher} initialName={currentUser?.NombreCompleto || ''} />;
       case RegistrationStep.REGISTER_FORM:
         if (!currentUser) {
-          setStep(RegistrationStep.VERIFY);
-          return null;
+          // No llamar a setState desde render; mostrar la pantalla de búsqueda
+          return <TeacherLookupStep onVerify={handleVerifyTeacher} onNewTeacher={handleGoToNewTeacher} />;
         }
 
         const normalizedUsername = normalizeName(currentUser.NombreCompleto);
@@ -359,8 +370,8 @@ const App: React.FC = () => {
         );
       case RegistrationStep.CANCEL_COURSE:
         if (!currentUser) {
-          setStep(RegistrationStep.VERIFY);
-          return null;
+          // No llamar a setState desde render; mostrar la pantalla de búsqueda
+          return <TeacherLookupStep onVerify={handleVerifyTeacher} onNewTeacher={handleGoToNewTeacher} />;
         }
         const userCoursesToCancel = inscriptions.filter(i => normalizeName(i.NombreCompleto) === normalizeName(currentUser.NombreCompleto));
         return (
@@ -403,7 +414,7 @@ const App: React.FC = () => {
                 <div className="flex">
                     <div className="flex-shrink-0">
                          <svg className="h-5 w-5 text-yellow-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                            <path fillRule="evenodd" d="M8.257 3.099a.75.75 0 011.486 0l5.25 9.286a.75.75 0 01-.643 1.115H3.654a.75.75 0 01-.643-1.115l5.25-9.286zM9 8a.75.75 0 01.75.75v2.5a.75.75 0 01-1.5 0v-2.5A.75.75 0 019 8zm0 6a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                            <path fillRule="evenodd" d="M8.257 3.099a.75.75 0 011.486 0l5.25 9.286a.75.75 0 01-.643 1.115H3.654a.75.75 0 01-.643-1.115l5.25-9.286zM9 8a.75.75 0 01.75.75v2.5a.75.75[...]"></path>
                         </svg>
                     </div>
                     <div className="ml-3">
