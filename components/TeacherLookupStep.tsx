@@ -1,9 +1,9 @@
 
 import React, { useState } from 'react';
-import type { DocenteRegistrado } from '../types';
-import Card from './ui/Card';
-import Input from './ui/Input';
-import Button from './ui/Button';
+import type { DocenteRegistrado } from '../types.ts';
+import Card from './ui/Card.tsx';
+import Input from './ui/Input.tsx';
+import Button from './ui/Button.tsx';
 
 interface Props {
   onVerify: (nombreCompleto: string) => DocenteRegistrado | null;

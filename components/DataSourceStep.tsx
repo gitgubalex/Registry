@@ -1,6 +1,7 @@
+
 import React, { useState, useRef } from 'react';
-import Card from './ui/Card';
-import Button from './ui/Button';
+import Card from './ui/Card.tsx';
+import Button from './ui/Button.tsx';
 
 interface Props {
   onLoadFromFile: (file: File) => Promise<void>;

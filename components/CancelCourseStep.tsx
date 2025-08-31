@@ -1,7 +1,8 @@
+
 import React, { useState } from 'react';
-import type { Inscripcion } from '../types';
-import Card from './ui/Card';
-import Button from './ui/Button';
+import type { Inscripcion } from '../types.ts';
+import Card from './ui/Card.tsx';
+import Button from './ui/Button.tsx';
 
 interface Props {
   userInscriptions: Inscripcion[];

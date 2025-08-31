@@ -1,5 +1,5 @@
 
-import { Curso, Departamento, Docente, CurpData } from '../types';
+import { Curso, Departamento, Docente, CurpData } from '../types.ts';
 
 export const CURSOS: Curso[] = [
   {

@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
-import Card from './ui/Card';
-import Input from './ui/Input';
-import Button from './ui/Button';
+import Card from './ui/Card.tsx';
+import Input from './ui/Input.tsx';
+import Button from './ui/Button.tsx';
 
 interface Props {
   initialName: string;
