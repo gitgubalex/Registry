@@ -8,6 +8,7 @@ import RegistrationFormStep from './components/RegistrationFormStep.tsx';
 import ConfirmationStep from './components/ConfirmationStep.tsx';
 import CancelCourseStep from './components/CancelCourseStep.tsx';
 import ThankYouStep from './components/ThankYouStep.tsx';
+import { CURSOS, DEPARTAMENTOS, DOCENTES, CURPS } from './constants/mockData.ts';
 
 declare var XLSX: any;
 
@@ -36,7 +37,7 @@ const App: React.FC = () => {
   const [inscriptions, setInscriptions] = useState<Inscripcion[]>([]);
 
   const [isLoadingData, setIsLoadingData] = useState<boolean>(true);
-  const [dataLoadError, setDataLoadError] = useState<string | null>(null);
+  const [dataLoadWarning, setDataLoadWarning] = useState<string | null>(null);
 
   const processExcelData = useCallback((data: ArrayBuffer) => {
     try {
@@ -152,6 +153,22 @@ const App: React.FC = () => {
     const arrayBuffer = await response.arrayBuffer();
     processExcelData(arrayBuffer);
   }, [processExcelData]);
+
+  const loadMockData = useCallback(() => {
+    const combinedDocentes = DOCENTES.map(docente => {
+      const normalizedDocenteName = normalizeName(docente.NombreCompleto);
+      const curpEntry = CURPS.find(c => 
+        normalizeName(c.NombreCompleto) === normalizedDocenteName
+      );
+      return { ...docente, curp: curpEntry?.curp };
+    });
+    
+    setCourses(CURSOS);
+    setDepartments(DEPARTAMENTOS);
+    setDocentesDB(combinedDocentes);
+    setInscriptions([]);
+    setStep(RegistrationStep.VERIFY);
+  }, []);
   
   useEffect(() => {
     const loadData = async () => {
@@ -159,14 +176,15 @@ const App: React.FC = () => {
         await handleDataLoadFromDB();
       } catch (error) {
         const message = error instanceof Error ? error.message : "Ocurrió un error desconocido al cargar los datos.";
-        console.error("Failed to load initial data:", message);
-        setDataLoadError(message);
+        console.warn("Failed to load initial data from DB, falling back to mock data:", message);
+        setDataLoadWarning(`No se pudo conectar con la base de datos (${message}). Se han cargado datos de demostración.`);
+        loadMockData();
       } finally {
         setIsLoadingData(false);
       }
     };
     loadData();
-  }, [handleDataLoadFromDB]);
+  }, [handleDataLoadFromDB, loadMockData]);
 
   const handleTeacherReset = useCallback(() => {
     setCurrentUser(null);
@@ -373,26 +391,6 @@ const App: React.FC = () => {
         </div>
       );
     }
-    if (dataLoadError) {
-      return (
-        <div className="bg-red-50 border-l-4 border-red-500 p-6 rounded-lg shadow-md">
-            <div className="flex">
-                <div className="flex-shrink-0">
-                    <svg className="h-6 w-6 text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                    </svg>
-                </div>
-                <div className="ml-4">
-                    <h3 className="text-lg font-bold text-red-800">Error al Cargar la Base de Datos</h3>
-                    <div className="mt-2 text-sm text-red-700">
-                        <p>{dataLoadError}</p>
-                        <p className="mt-2">Por favor, revise su conexión a internet e intente recargar la página. Si el problema persiste, contacte al soporte técnico.</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-      );
-    }
     return renderStep();
   }
 
@@ -400,6 +398,22 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-slate-100 font-sans text-slate-800 flex flex-col">
       <Header />
       <main className="flex-grow w-full max-w-4xl mx-auto p-4 sm:p-6 lg:p-8">
+        {dataLoadWarning && (
+            <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6 rounded-lg shadow-md" role="alert">
+                <div className="flex">
+                    <div className="flex-shrink-0">
+                         <svg className="h-5 w-5 text-yellow-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                            <path fillRule="evenodd" d="M8.257 3.099a.75.75 0 011.486 0l5.25 9.286a.75.75 0 01-.643 1.115H3.654a.75.75 0 01-.643-1.115l5.25-9.286zM9 8a.75.75 0 01.75.75v2.5a.75.75 0 01-1.5 0v-2.5A.75.75 0 019 8zm0 6a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                        </svg>
+                    </div>
+                    <div className="ml-3">
+                        <p className="text-sm text-yellow-800">
+                            <span className="font-bold">Advertencia:</span> {dataLoadWarning}
+                        </p>
+                    </div>
+                </div>
+            </div>
+        )}
         <div className="transition-all duration-300">
             {renderContent()}
         </div>
