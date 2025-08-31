@@ -1,0 +1,5 @@
+{
+  "name": "Sistema de Inscripción a Cursos para Docentes",
+  "description": "Una aplicación web para que los docentes se inscriban en cursos de desarrollo profesional. Permite la verificación de docentes existentes y el registro de nuevos participantes.",
+  "requestFramePermissions": []
+}
