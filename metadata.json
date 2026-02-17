@@ -1,5 +1,7 @@
 {
-  "name": "Sistema de Inscripción a Cursos para Docentes",
-  "description": "Una aplicación web para que los docentes se inscriban en cursos de desarrollo profesional. Permite la verificación de docentes existentes y el registro de nuevos participantes.",
-  "requestFramePermissions": []
+  "name": "NetTrace Edu",
+  "description": "An educational tool for networking students to visualize Traceroute paths and WHOIS data using Gemini and Google Maps Grounding.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
 }

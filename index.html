@@ -1,25 +1,64 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en" class="dark">
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Sistema de Inscripción a Cursos</title>
-
-    <!-- Optional: Tailwind CDN for quick styling in a simple static deployment -->
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NetTrace Edu - Network Visualizer</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="./index.css" />
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+      }
+    </script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+     integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+     crossorigin=""/>
+    <style>
+      /* Custom scrollbar for webkit */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #1e1e24; 
+      }
+      .dark ::-webkit-scrollbar-track {
+        background: #1e1e24;
+      }
+      :not(.dark) ::-webkit-scrollbar-track {
+        background: #f1f5f9;
+      }
 
-    <!-- SheetJS (XLSX) required by the app to parse Excel in-browser -->
-    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
-
-    <!-- Ensure assets resolve correctly when the site is served from a subpath (GitHub Pages) -->
-    <base href="./">
-  </head>
-
-  <body class="bg-slate-50">
+      ::-webkit-scrollbar-thumb {
+        background: #4b5563; 
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #6b7280; 
+      }
+      .leaflet-container {
+        width: 100%;
+        height: 100%;
+        z-index: 0;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "@google/genai": "https://esm.sh/@google/genai@^1.41.0",
+    "lucide-react": "https://esm.sh/lucide-react@^0.564.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "react": "https://esm.sh/react@^19.2.4",
+    "react/": "https://esm.sh/react@^19.2.4/",
+    "leaflet": "https://esm.sh/leaflet@^1.9.4",
+    "react-leaflet": "https://esm.sh/react-leaflet@^5.0.0"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-200 antialiased overflow-hidden transition-colors duration-300">
     <div id="root"></div>
-
-    <!-- Production bundle: replace ./main.js with the actual built bundle filename produced by Vite (e.g. ./assets/index.<hash>.js) -->
-    <script type="module" src="./main.js"></script>
-  </body>
+  <script type="module" src="/index.tsx"></script>
+</body>
 </html>

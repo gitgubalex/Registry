@@ -1,440 +1,344 @@
-import React, { useState, useCallback, useEffect } from 'react';
-import { RegistrationStep, DocenteRegistrado, Inscripcion, Docente, Curso, Departamento, CurpData, RegistrationFormData } from './types.ts';
-import Header from './components/Header.tsx';
-import TeacherLookupStep from './components/TeacherLookupStep.tsx';
-import NewTeacherStep from './components/NewTeacherStep.tsx';
-import RegistrationFormStep from './components/RegistrationFormStep.tsx';
-import ConfirmationStep from './components/ConfirmationStep.tsx';
-import CancelCourseStep from './components/CancelCourseStep.tsx';
-import ThankYouStep from './components/ThankYouStep.tsx';
-import { CURSOS, DEPARTAMENTOS, DOCENTES, CURPS } from './constants/mockData.ts';
+import React, { useState, useEffect } from 'react';
+import { runNetworkAnalysis } from './services/geminiService';
+import { AnalysisResult, TracerouteHop, WhoisData } from './types';
+import { TracerouteList } from './components/TracerouteList';
+import { MapVisualizer } from './components/MapVisualizer';
+import { WhoisPanel } from './components/WhoisPanel';
+import { Activity, Globe, Search, Map, Terminal, AlertTriangle, PlayCircle, Loader2, MapPin, MapPinOff, Wifi, CheckCircle2, Sun, Moon } from 'lucide-react';
 
-declare var XLSX: any;
+const DURANGO_ISPS = [
+  { name: 'Uninet (Telmex)', id: 'Uninet' },
+  { name: 'Megacable', id: 'Megacable' },
+  { name: 'Totalplay', id: 'Totalplay' },
+  { name: 'Izzi', id: 'Izzi' },
+  { name: 'Starlink', id: 'Starlink' },
+  { name: 'AT&T', id: 'AT&T' },
+  { name: 'Telcel', id: 'Telcel' },
+];
 
-const DB_URL = 'https://raw.githubusercontent.com/gitgubalex/Registry/main/Registro%20de%20Cursos%20ITD.xlsx';
-const COURSE_CAPACITY = 30;
-
-const normalizeName = (name: string): string => {
-    if (!name || typeof name !== 'string') return '';
-    return name
-      .toLowerCase()
-      .trim()
-      .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Eliminar acentos
-      .split(/\s+/)
-      .sort()
-      .join(' ');
-};
-
-const App: React.FC = () => {
-  const [step, setStep] = useState<RegistrationStep>(RegistrationStep.VERIFY);
-  const [currentUser, setCurrentUser] = useState<DocenteRegistrado | null>(null);
-  const [lastInscription, setLastInscription] = useState<Inscripcion | null>(null);
+export default function App() {
+  const [target, setTarget] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [highlightedHop, setHighlightedHop] = useState<TracerouteHop | null>(null);
+  const [mode, setMode] = useState<'traceroute' | 'whois'>('traceroute');
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | undefined>(undefined);
+  const [locationStatus, setLocationStatus] = useState<'pending' | 'found' | 'denied'>('pending');
   
-  const [courses, setCourses] = useState<Curso[]>([]);
-  const [departments, setDepartments] = useState<Departamento[]>([]);
-  const [docentesDB, setDocentesDB] = useState<DocenteRegistrado[]>([]);
-  const [inscriptions, setInscriptions] = useState<Inscripcion[]>([]);
+  // Theme State
+  const [isDarkMode, setIsDarkMode] = useState(true);
 
-  const [isLoadingData, setIsLoadingData] = useState<boolean>(true);
-  const [dataLoadWarning, setDataLoadWarning] = useState<string | null>(null);
+  // ISP Selection State
+  const [showIspModal, setShowIspModal] = useState(true);
+  const [selectedIsp, setSelectedIsp] = useState<string | null>(null);
 
-  const processExcelData = useCallback((data: ArrayBuffer) => {
-    try {
-      const workbook = XLSX.read(data, { type: 'array' });
-
-      const requiredSheets = ['Cursos', 'Departamentos', 'Docentes'];
-      for (const sheetName of requiredSheets) {
-        if (!workbook.SheetNames.includes(sheetName)) {
-          throw new Error(`El archivo de Excel no contiene la hoja requerida: "${sheetName}"`);
-        }
-      }
-
-      const normalizeKeys = (obj: any): any => {
-        const newObj: any = {};
-        for (const key in obj) {
-            if (Object.prototype.hasOwnProperty.call(obj, key)) {
-                const normalizedKey = key.trim().toLowerCase().replace(/\s+/g, '');
-                newObj[normalizedKey] = obj[key];
-            }
-        }
-        return newObj;
-      };
-      
-      const findValue = (row: any, keys: string[]): any => {
-        for (const key of keys) {
-            if (row[key] !== undefined && row[key] !== null) {
-                return row[key];
-            }
-        }
-        return undefined;
-      };
-
-      const cursosRaw: any[] = XLSX.utils.sheet_to_json(workbook.Sheets['Cursos']).map(normalizeKeys);
-      const departamentosRaw: any[] = XLSX.utils.sheet_to_json(workbook.Sheets['Departamentos']).map(normalizeKeys);
-      const docentesRaw: any[] = XLSX.utils.sheet_to_json(workbook.Sheets['Docentes']).map(normalizeKeys);
-      
-      let curpsData: CurpData[] = [];
-      const curpSheetName = workbook.SheetNames.find((name: string) => name.toLowerCase() === 'curp');
-
-      if (curpSheetName) {
-        const curpsRaw: any[] = XLSX.utils.sheet_to_json(workbook.Sheets[curpSheetName]).map(normalizeKeys);
-        curpsData = curpsRaw
-          .map(row => ({
-              NombreCompleto: findValue(row, ['nombre', 'nombrecompleto']),
-              curp: findValue(row, ['curp'])
-          }))
-          .filter(c => c.NombreCompleto && c.curp);
-        
-        if (!curpsData.length) {
-            console.warn(`La hoja '${curpSheetName}' fue encontrada pero está vacía o no contiene las columnas requeridas (ej: 'NombreCompleto', 'curp').`);
-        }
-      } else {
-        console.warn("No se encontró una hoja de CURP. La información de CURP no será cargada.");
-      }
-
-      const cursosData: Curso[] = cursosRaw
-        .map(row => ({
-            NombreCurso: findValue(row, ['nombrecurso', 'nombrcurso', 'nombredelcurso', 'curso']),
-            FechaVisible: findValue(row, ['fechavisible', 'fechavisiible', 'fechainicio', 'fecha']),
-            Periodo: findValue(row, ['periodo']),
-            Horas: findValue(row, ['horas']),
-            Lugar: findValue(row, ['lugar', 'ubicacion']),
-            Horario: findValue(row, ['horario'])
-        }))
-        .filter(c => c.NombreCurso && c.FechaVisible);
-
-      const departamentosData: Departamento[] = departamentosRaw
-        .map(row => ({ NombreDepartamento: findValue(row, ['nombredepartamento', 'nombre', 'departamento', 'departamentos']) }))
-        .filter(d => d.NombreDepartamento);
-
-      const docentesData: Docente[] = docentesRaw
-        .map(row => ({
-            NombreCompleto: findValue(row, ['nombrecompleto', 'nombre']),
-            email: findValue(row, ['email', 'correo', 'correoelectronico'])
-        }))
-        .filter(d => d.NombreCompleto && d.email);
-      
-      if (!cursosData.length) {
-        throw new Error("La hoja 'Cursos' está vacía o no contiene las columnas requeridas (ej: 'NombreCurso', 'FechaVisible').");
-      }
-      if (!departamentosData.length) {
-        throw new Error("La hoja 'Departamentos' está vacía o no contiene la columna requerida (ej: 'NombreDepartamento').");
-      }
-      if (!docentesData.length) {
-        throw new Error("La hoja 'Docentes' está vacía o no contiene las columnas requeridas (ej: 'NombreCompleto', 'email').");
-      }
-
-      const combinedDocentes = docentesData.map(docente => {
-        const normalizedDocenteName = normalizeName(docente.NombreCompleto);
-        const curpEntry = curpsData.find(c => 
-            normalizeName(c.NombreCompleto) === normalizedDocenteName
-        );
-        return { ...docente, curp: curpEntry?.curp };
-      });
-      
-      setCourses(cursosData);
-      setDepartments(departamentosData);
-      setDocentesDB(combinedDocentes);
-      setInscriptions([]);
-      setStep(RegistrationStep.VERIFY);
-    } catch (error) {
-       const message = error instanceof Error ? error.message : "Ocurrió un error desconocido al procesar el archivo.";
-       console.error("Error parsing Excel file:", message);
-       throw new Error(message);
+  // Toggle Dark Mode Class
+  useEffect(() => {
+    const html = document.documentElement;
+    if (isDarkMode) {
+      html.classList.add('dark');
+    } else {
+      html.classList.remove('dark');
     }
-  }, []);
+  }, [isDarkMode]);
 
-  const handleDataLoadFromDB = useCallback(async () => {
-    const response = await fetch(DB_URL);
-    if (!response.ok) {
-        throw new Error(`No se pudo cargar la base de datos. Estado: ${response.status}`);
-    }
-    const arrayBuffer = await response.arrayBuffer();
-    processExcelData(arrayBuffer);
-  }, [processExcelData]);
-
-  const loadMockData = useCallback(() => {
-    const combinedDocentes = DOCENTES.map(docente => {
-      const normalizedDocenteName = normalizeName(docente.NombreCompleto);
-      const curpEntry = CURPS.find(c => 
-        normalizeName(c.NombreCompleto) === normalizedDocenteName
+  // Get user location for Grounding context
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setUserLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          });
+          setLocationStatus('found');
+        },
+        (err) => {
+          console.log("Geolocation denied or failed, defaulting to simulation base.");
+          setLocationStatus('denied');
+        }
       );
-      return { ...docente, curp: curpEntry?.curp };
-    });
-    
-    setCourses(CURSOS);
-    setDepartments(DEPARTAMENTOS);
-    setDocentesDB(combinedDocentes);
-    setInscriptions([]);
-    setStep(RegistrationStep.VERIFY);
-  }, []);
-  
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        await handleDataLoadFromDB();
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Ocurrió un error desconocido al cargar los datos.";
-        console.warn("Failed to load initial data from DB, falling back to mock data:", message);
-        setDataLoadWarning(`No se pudo conectar con la base de datos (${message}). Se han cargado datos de demostración.`);
-        loadMockData();
-      } finally {
-        setIsLoadingData(false);
-      }
-    };
-    loadData();
-  }, [handleDataLoadFromDB, loadMockData]);
-
-  const handleTeacherReset = useCallback(() => {
-    setCurrentUser(null);
-    setLastInscription(null);
-    setStep(RegistrationStep.VERIFY);
-  }, []);
-
-  // Evita setState durante el render: si no hay usuario y el paso
-  // está en uno que requiere usuario, redirigimos a VERIFY
-  useEffect(() => {
-    if (!currentUser && (
-      step === RegistrationStep.REGISTER_FORM ||
-      step === RegistrationStep.CANCEL_COURSE ||
-      step === RegistrationStep.CONFIRMATION
-    )) {
-      setStep(RegistrationStep.VERIFY);
+    } else {
+      setLocationStatus('denied');
     }
-  }, [currentUser, step]);
-
-  const handleVerifyTeacher = useCallback((nombreCompleto: string): DocenteRegistrado | null => {
-    const normalizedInputName = normalizeName(nombreCompleto);
-    const found = docentesDB.find(d => normalizeName(d.NombreCompleto) === normalizedInputName);
-    if (found) {
-      setCurrentUser(found);
-      setStep(RegistrationStep.REGISTER_FORM);
-      return found;
-    }
-    return null;
-  }, [docentesDB]);
-  
-  const handleGoToNewTeacher = useCallback((initialName: string) => {
-    setCurrentUser({ NombreCompleto: initialName, email: '' });
-    setStep(RegistrationStep.NEW_TEACHER);
   }, []);
 
-  const handleRegisterNewTeacher = useCallback((newTeacherData: { NombreCompleto: string; email: string; curp: string; }) => {
-    const { NombreCompleto, email, curp } = newTeacherData;
+  const handleAnalysis = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!target) return;
 
-    const isValidCurp = curp.trim().length === 18 && /^[A-Z0-9]+$/i.test(curp.trim());
+    setLoading(true);
+    setError(null);
+    setResult(null);
 
-    const newDocente: DocenteRegistrado = {
-      NombreCompleto,
-      email,
-      curp: isValidCurp ? curp.trim().toUpperCase() : 'PENDIENTE'
-    };
-    
-    setDocentesDB(prev => [...prev, newDocente]);
-    setCurrentUser(newDocente);
-    setStep(RegistrationStep.REGISTER_FORM);
-  }, []);
-
-  const handleFinalSubmit = useCallback((formData: RegistrationFormData) => {
-    if (!currentUser) return;
-
-    const normalizedCurrentUser = normalizeName(currentUser.NombreCompleto);
-    const userInscriptions = inscriptions.filter(i => normalizeName(i.NombreCompleto) === normalizedCurrentUser);
-    if (userInscriptions.length >= 2) {
-        console.error("El docente ya alcanzó el límite de 2 cursos.");
-        return;
-    }
-
-    const courseEnrollmentCount = inscriptions.filter(i => i.CursoSeleccionado === formData.cursoSeleccionado).length;
-    if (courseEnrollmentCount >= COURSE_CAPACITY) {
-        console.error("Este curso ya está lleno.");
-        return;
-    }
-
-    const selectedCourse = courses.find(c => c.NombreCurso === formData.cursoSeleccionado);
-    if (userInscriptions.length === 1) {
-        const firstCourseName = userInscriptions[0].CursoSeleccionado;
-        const firstCourseDetails = courses.find(c => c.NombreCurso === firstCourseName);
-        if (firstCourseDetails && selectedCourse && firstCourseDetails.FechaVisible === selectedCourse.FechaVisible) {
-            console.error("El segundo curso debe tener una fecha diferente al primero.");
-            return;
-        }
-    }
-    
-    const newInscription: Inscripcion = {
-      Timestamp: new Date().toISOString(),
-      NombreCompleto: formData.NombreCompleto,
-      Curp: currentUser.curp || 'NO ENCONTRADO',
-      Email: formData.email,
-      Genero: formData.genero,
-      CursoSeleccionado: formData.cursoSeleccionado,
-      DepartamentoSeleccionado: formData.departamentoSeleccionado,
-      FechaVisible: selectedCourse?.FechaVisible || new Date().toLocaleDateString(),
-      Lugar: selectedCourse?.Lugar || 'No especificado',
-    };
-    
-    setInscriptions(prev => [...prev, newInscription]);
-    setLastInscription(newInscription);
-    setStep(RegistrationStep.CONFIRMATION);
-  }, [currentUser, courses, inscriptions]);
-
-  const handleGoToCancel = useCallback(() => {
-    setStep(RegistrationStep.CANCEL_COURSE);
-  }, []);
-
-  const handleFinish = useCallback(() => {
-    setStep(RegistrationStep.THANK_YOU);
-  }, []);
-
-  const handleConfirmCancel = useCallback((courseNameToCancel: string) => {
-    if (!currentUser) return;
-    const normalizedCurrentUser = normalizeName(currentUser.NombreCompleto);
-    
-    setInscriptions(prev => 
-      prev.filter(insc => 
-        !(normalizeName(insc.NombreCompleto) === normalizedCurrentUser && insc.CursoSeleccionado === courseNameToCancel)
-      )
-    );
-    setLastInscription(null); 
-    setStep(RegistrationStep.REGISTER_FORM);
-  }, [currentUser]);
-
-  const renderStep = () => {
-    switch (step) {
-      case RegistrationStep.VERIFY:
-        return <TeacherLookupStep onVerify={handleVerifyTeacher} onNewTeacher={handleGoToNewTeacher} />;
-      case RegistrationStep.NEW_TEACHER:
-        return <NewTeacherStep onSubmit={handleRegisterNewTeacher} initialName={currentUser?.NombreCompleto || ''} />;
-      case RegistrationStep.REGISTER_FORM:
-        if (!currentUser) {
-          // No llamar a setState desde render; mostrar la pantalla de búsqueda
-          return <TeacherLookupStep onVerify={handleVerifyTeacher} onNewTeacher={handleGoToNewTeacher} />;
-        }
-
-        const normalizedUsername = normalizeName(currentUser.NombreCompleto);
-        const userInscriptions = inscriptions.filter(i => normalizeName(i.NombreCompleto) === normalizedUsername);
-        const firstCourseDepartment = userInscriptions.length === 1 ? userInscriptions[0].DepartamentoSeleccionado : undefined;
-
-        if (userInscriptions.length >= 2) {
-          return (
-             <ConfirmationStep
-                inscription={lastInscription}
-                onReset={handleTeacherReset}
-                onRegisterAnother={() => {}}
-                userRegistrationsCount={userInscriptions.length}
-                onCancelCourse={handleGoToCancel}
-                onFinish={handleFinish}
-             />
-          );
-        }
-
-        const courseEnrollmentCounts = inscriptions.reduce((acc, ins) => {
-            acc[ins.CursoSeleccionado] = (acc[ins.CursoSeleccionado] || 0) + 1;
-            return acc;
-        }, {} as { [key: string]: number });
-        
-        const availableCourses = courses.filter(course => {
-            if ((courseEnrollmentCounts[course.NombreCurso] || 0) >= COURSE_CAPACITY) return false;
-            if (userInscriptions.some(i => i.CursoSeleccionado === course.NombreCurso)) return false;
-            if (userInscriptions.length === 1) {
-                const firstCourseDetails = courses.find(c => c.NombreCurso === userInscriptions[0].CursoSeleccionado);
-                if (firstCourseDetails && firstCourseDetails.FechaVisible === course.FechaVisible) {
-                    return false;
-                }
-            }
-            return true;
-        });
-
-        return (
-          <RegistrationFormStep
-            user={currentUser}
-            courses={availableCourses}
-            departments={departments}
-            onSubmit={handleFinalSubmit}
-            courseEnrollmentCounts={courseEnrollmentCounts}
-            courseCapacity={COURSE_CAPACITY}
-            firstCourseDepartment={firstCourseDepartment}
-          />
-        );
-      case RegistrationStep.CONFIRMATION:
-        const count = inscriptions.filter(i => normalizeName(i.NombreCompleto) === normalizeName(currentUser?.NombreCompleto || '')).length;
-        return (
-            <ConfirmationStep 
-                inscription={lastInscription} 
-                onReset={handleTeacherReset}
-                onRegisterAnother={() => setStep(RegistrationStep.REGISTER_FORM)}
-                userRegistrationsCount={count}
-                onCancelCourse={handleGoToCancel}
-                onFinish={handleFinish}
-            />
-        );
-      case RegistrationStep.CANCEL_COURSE:
-        if (!currentUser) {
-          // No llamar a setState desde render; mostrar la pantalla de búsqueda
-          return <TeacherLookupStep onVerify={handleVerifyTeacher} onNewTeacher={handleGoToNewTeacher} />;
-        }
-        const userCoursesToCancel = inscriptions.filter(i => normalizeName(i.NombreCompleto) === normalizeName(currentUser.NombreCompleto));
-        return (
-            <CancelCourseStep
-                userInscriptions={userCoursesToCancel}
-                onConfirmCancel={handleConfirmCancel}
-                onBack={() => setStep(RegistrationStep.CONFIRMATION)}
-            />
-        );
-      
-      case RegistrationStep.THANK_YOU:
-        return <ThankYouStep onReset={handleTeacherReset} />;
-      default:
-        return <TeacherLookupStep onVerify={handleVerifyTeacher} onNewTeacher={handleGoToNewTeacher} />;
+    try {
+      const data = await runNetworkAnalysis(target, mode, userLocation, selectedIsp);
+      setResult(data);
+    } catch (err: any) {
+      setError(err.message || "An unexpected error occurred.");
+    } finally {
+      setLoading(false);
     }
   };
 
-  const renderContent = () => {
-    if (isLoadingData) {
-      return (
-        <div className="flex flex-col items-center justify-center text-center p-12 bg-white rounded-lg shadow-lg">
-          <svg className="animate-spin h-10 w-10 text-blue-600 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
-          <h2 className="text-xl font-semibold text-slate-800">Cargando Datos</h2>
-          <p className="text-slate-500 mt-1">Por favor espere, estamos preparando el sistema de inscripción.</p>
-        </div>
-      );
-    }
-    return renderStep();
-  }
+  const handleSelectIsp = (isp: string | null) => {
+    setSelectedIsp(isp);
+    setShowIspModal(false);
+  };
 
   return (
-    <div className="min-h-screen bg-slate-100 font-sans text-slate-800 flex flex-col">
-      <Header />
-      <main className="flex-grow w-full max-w-4xl mx-auto p-4 sm:p-6 lg:p-8">
-        {dataLoadWarning && (
-            <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6 rounded-lg shadow-md" role="alert">
-                <div className="flex">
-                    <div className="flex-shrink-0">
-                         <svg className="h-5 w-5 text-yellow-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                            <path fillRule="evenodd" d="M8.257 3.099a.75.75 0 011.486 0l5.25 9.286a.75.75 0 01-.643 1.115H3.654a.75.75 0 01-.643-1.115l5.25-9.286zM9 8a.75.75 0 01.75.75v2.5a.75.75[...]"></path>
-                        </svg>
-                    </div>
-                    <div className="ml-3">
-                        <p className="text-sm text-yellow-800">
-                            <span className="font-bold">Advertencia:</span> {dataLoadWarning}
-                        </p>
-                    </div>
+    <div className="flex flex-col h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-200 font-sans selection:bg-sky-500/30 transition-colors duration-300">
+      
+      {/* ISP Selection Modal */}
+      {showIspModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden">
+            <div className="p-6 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="p-2 bg-sky-500/20 rounded-lg">
+                   <Wifi className="w-6 h-6 text-sky-600 dark:text-sky-400" />
+                </div>
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Select Origin ISP</h2>
+              </div>
+              <p className="text-slate-600 dark:text-slate-400 text-sm">
+                To make the network simulation accurate for Durango, please select your current Internet Service Provider.
+              </p>
+            </div>
+            
+            <div className="p-6 grid grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto bg-white dark:bg-slate-900">
+              {DURANGO_ISPS.map((isp) => (
+                <button
+                  key={isp.id}
+                  onClick={() => handleSelectIsp(isp.id)}
+                  className="flex items-center gap-3 p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 hover:bg-sky-50 dark:hover:bg-sky-600/20 hover:border-sky-400 dark:hover:border-sky-500/50 transition-all text-left group"
+                >
+                  <div className="w-4 h-4 rounded-full border border-slate-400 dark:border-slate-500 group-hover:border-sky-500 dark:group-hover:border-sky-400 flex items-center justify-center">
+                    <div className="w-2 h-2 rounded-full bg-sky-500 dark:bg-sky-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </div>
+                  <span className="font-medium text-slate-700 dark:text-slate-200 group-hover:text-sky-700 dark:group-hover:text-white">{isp.name}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="p-6 pt-2 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50">
+              <button 
+                onClick={() => handleSelectIsp(null)}
+                className="w-full py-3 rounded-xl border border-dashed border-slate-300 dark:border-slate-600 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white hover:border-slate-400 dark:hover:border-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all text-sm font-medium"
+              >
+                I don't know / Skip setup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Decorative Guinda Line */}
+      <div className="h-2 w-full bg-[#8A0F2E] shadow-[0_0_15px_rgba(138,15,46,0.6)] z-20"></div>
+
+      {/* Header */}
+      <header className="flex items-center justify-between px-6 py-3 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 z-10 shadow-md transition-colors duration-300">
+        <div className="flex items-center gap-4">
+          {/* Institution Logo */}
+          <img 
+            src="https://github.com/gitgubalex/NetTrace/blob/main/logo_itdurango.png?raw=true" 
+            alt="IT Durango" 
+            className="h-12 w-auto object-contain drop-shadow-lg"
+          />
+
+          <div className="h-8 w-px bg-slate-300 dark:bg-slate-700 hidden sm:block"></div>
+
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-gradient-to-br from-sky-500 to-indigo-600 rounded-lg shadow-lg shadow-sky-500/20">
+              <Activity className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold bg-gradient-to-r from-sky-600 to-indigo-600 dark:from-sky-400 dark:to-indigo-400 bg-clip-text text-transparent">
+                NetTrace Edu
+              </h1>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Network Diagnostic & Visualization</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-4 items-center">
+          
+           {/* Dark Mode Toggle */}
+           <button
+            onClick={() => setIsDarkMode(!isDarkMode)}
+            className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 transition-colors"
+            title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
+          >
+            {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+          </button>
+
+          {/* Current ISP Display (Mini) */}
+          {selectedIsp && (
+            <div 
+                className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-full border border-slate-200 dark:border-slate-700 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                onClick={() => setShowIspModal(true)}
+                title="Change ISP"
+            >
+                <div className="w-2 h-2 rounded-full bg-emerald-500 dark:bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]"></div>
+                <span className="text-xs font-medium text-slate-600 dark:text-slate-300">ISP: <span className="text-slate-900 dark:text-white">{selectedIsp}</span></span>
+            </div>
+          )}
+
+           {/* Mode Toggles */}
+          <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg border border-slate-200 dark:border-slate-700">
+            <button
+              onClick={() => { setMode('traceroute'); setResult(null); }}
+              className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+                mode === 'traceroute' 
+                  ? 'bg-white dark:bg-sky-600 text-sky-700 dark:text-white shadow-sm' 
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
+              }`}
+            >
+              <Terminal className="w-4 h-4" />
+              Traceroute
+            </button>
+            <button
+              onClick={() => { setMode('whois'); setResult(null); }}
+              className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+                mode === 'whois' 
+                  ? 'bg-white dark:bg-purple-600 text-purple-700 dark:text-white shadow-sm' 
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
+              }`}
+            >
+              <Globe className="w-4 h-4" />
+              WHOIS
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <div className="flex flex-1 overflow-hidden relative">
+        
+        {/* Left Sidebar - Controls & Data */}
+        <div className="w-full md:w-[450px] flex flex-col border-r border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 z-10 backdrop-blur-sm relative shadow-2xl transition-colors duration-300">
+          
+          {/* Search Bar */}
+          <div className="p-6 border-b border-slate-200 dark:border-slate-800">
+            <form onSubmit={handleAnalysis} className="relative">
+              <input
+                type="text"
+                value={target}
+                onChange={(e) => setTarget(e.target.value)}
+                placeholder={mode === 'traceroute' ? "Enter domain or IP (e.g. google.com)" : "Enter domain (e.g. example.com)"}
+                className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl py-3 pl-11 pr-4 text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500/50 focus:border-sky-500 transition-all"
+              />
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 dark:text-slate-500" />
+              <button 
+                type="submit"
+                disabled={loading || !target}
+                className="absolute right-2 top-1/2 -translate-y-1/2 bg-sky-600 hover:bg-sky-500 text-white p-1.5 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlayCircle className="w-4 h-4" />}
+              </button>
+            </form>
+            <div className="mt-3 flex items-center justify-between text-xs text-slate-500 dark:text-slate-500">
+                <div className="flex items-center gap-1.5">
+                    {locationStatus === 'found' ? (
+                        <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                            <MapPin className="w-3 h-3" />
+                            <span>Using your location</span>
+                        </div>
+                    ) : locationStatus === 'denied' ? (
+                        <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-500" title="Enable browser geolocation for accurate origin">
+                            <MapPinOff className="w-3 h-3" />
+                            <span>Location hidden (using default)</span>
+                        </div>
+                    ) : (
+                        <div className="flex items-center gap-1.5 text-slate-400">
+                             <Loader2 className="w-3 h-3 animate-spin" />
+                             <span>Locating...</span>
+                        </div>
+                    )}
+                </div>
+                <div className="flex items-center gap-1 text-slate-600 dark:text-slate-600">
+                    <AlertTriangle className="w-3 h-3" />
+                    <span>AI Simulated</span>
                 </div>
             </div>
-        )}
-        <div className="transition-all duration-300">
-            {renderContent()}
+          </div>
+
+          {/* Results Area */}
+          <div className="flex-1 overflow-hidden relative">
+            {loading && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/80 dark:bg-slate-900/80 z-20 backdrop-blur-sm transition-colors">
+                <Loader2 className="w-10 h-10 text-sky-500 animate-spin mb-4" />
+                <p className="text-sky-600 dark:text-sky-400 font-medium animate-pulse">Analyzing Network Path...</p>
+                <p className="text-slate-500 text-sm mt-2">Querying Maps Grounding...</p>
+              </div>
+            )}
+
+            {!loading && !result && !error && (
+              <div className="h-full flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 p-8 text-center">
+                <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4 transition-colors">
+                  <Map className="w-8 h-8 opacity-50" />
+                </div>
+                <h3 className="text-lg font-medium text-slate-600 dark:text-slate-300 mb-2">Ready to Trace</h3>
+                <p className="text-sm max-w-[250px]">
+                  Enter a target domain to visualize the route packets take across the globe.
+                </p>
+              </div>
+            )}
+
+            {error && (
+              <div className="p-6 text-center">
+                <div className="inline-flex p-3 bg-red-100 dark:bg-red-900/20 rounded-full text-red-500 mb-4 transition-colors">
+                  <AlertTriangle className="w-8 h-8" />
+                </div>
+                <h3 className="text-red-600 dark:text-red-400 font-bold mb-2">Analysis Failed</h3>
+                <p className="text-slate-600 dark:text-slate-400 text-sm">{error}</p>
+              </div>
+            )}
+
+            {result && result.type === 'traceroute' && result.traceroute && (
+              <TracerouteList 
+                hops={result.traceroute} 
+                onHopHover={setHighlightedHop}
+              />
+            )}
+
+            {result && result.type === 'whois' && result.whois && (
+              <WhoisPanel data={result.whois} />
+            )}
+          </div>
         </div>
-      </main>
-      <footer className="text-center p-4 text-slate-500 text-sm">
-        <p>&copy; 2025 Registro de Cursos de Actualización. Todos los derechos reservados.</p>
-        <p className="text-xs mt-1">Desarrollo Académico, coordinación de actualización docente del ITD.</p>
-      </footer>
+
+        {/* Map Area */}
+        <div className="flex-1 bg-slate-200 dark:bg-slate-950 relative h-full transition-colors duration-300">
+          <MapVisualizer 
+            hops={result?.traceroute} 
+            whois={result?.whois}
+            highlightedHop={highlightedHop} 
+            userLocation={userLocation}
+            isDarkMode={isDarkMode}
+          />
+          
+          {/* Legend / Overlay */}
+          <div className="absolute bottom-6 right-6 bg-white/90 dark:bg-slate-900/90 backdrop-blur border border-slate-200 dark:border-slate-700 p-4 rounded-xl shadow-2xl z-[400] max-w-[200px] transition-colors">
+            <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-3 tracking-wider">Map Legend</h4>
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-white border border-slate-500 shadow-sm"></div>
+                <span className="text-slate-600 dark:text-slate-300">My Location</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-indigo-500 border border-white shadow-sm"></div>
+                <span className="text-slate-600 dark:text-slate-300">Network Hop</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="h-0.5 w-6 bg-sky-500 border-t border-dashed border-sky-300"></div>
+                <span className="text-slate-600 dark:text-slate-300">Data Path</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
     </div>
   );
-};
-
-export default App;
+}
